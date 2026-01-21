@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wordle</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='10' y='10' width='80' height='80' fill='%236aaa64' rx='5'/><text x='50' y='65' font-size='50' font-weight='bold' fill='white' text-anchor='middle' font-family='Arial'>W</text></svg>">
     <style>
         :root {
             --bg-color: #121213;
@@ -204,6 +205,7 @@
             cursor: pointer;
             user-select: none;
             transition: all 0.2s;
+            position: relative;
         }
 
         .key:hover {
@@ -228,7 +230,19 @@
         }
 
         .key.absent {
-            background-color: var(--absent-color);
+            background-color: #2d2d2f;
+            opacity: 0.6;
+        }
+
+        .key.absent::after {
+            content: '';
+            position: absolute;
+            left: 15%;
+            right: 15%;
+            top: 50%;
+            height: 2px;
+            background-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-50%);
         }
 
         .message {
@@ -1282,13 +1296,44 @@
                 const result = this.getGuessResult(guess);
                 this.previousGuesses.push(guess);
 
+                // Track best status for each letter (correct > present > absent)
+                // Process all letters to determine the best status for each
+                const letterStatuses = {};
+                for (let i = 0; i < 5; i++) {
+                    const letter = guess[i];
+                    const status = result[i];
+                    
+                    // Priority: correct > present > absent
+                    if (!letterStatuses[letter]) {
+                        // First time seeing this letter in this guess
+                        letterStatuses[letter] = status;
+                    } else {
+                        // Upgrade status if we found a better one
+                        const current = letterStatuses[letter];
+                        if (status === 'correct') {
+                            letterStatuses[letter] = 'correct';
+                        } else if (status === 'present' && current !== 'correct') {
+                            letterStatuses[letter] = 'present';
+                        } else if (status === 'absent' && current === '') {
+                            letterStatuses[letter] = 'absent';
+                        }
+                    }
+                }
+
+                // Update keyboard for all unique letters in the guess
+                const uniqueLetters = new Set(guess);
+                uniqueLetters.forEach(letter => {
+                    if (letterStatuses[letter]) {
+                        this.updateKeyboard(letter, letterStatuses[letter]);
+                    }
+                });
+
                 const tiles = document.querySelectorAll(`[data-row="${this.currentRow}"]`);
                 tiles.forEach((tile, index) => {
                     setTimeout(() => {
                         tile.classList.add('flip');
                         setTimeout(() => {
                             tile.classList.add(result[index]);
-                            this.updateKeyboard(guess[index], result[index]);
                         }, 300);
                     }, index * 100);
                 });
@@ -1322,15 +1367,29 @@
 
             updateKeyboard(letter, status) {
                 const key = document.querySelector(`[data-key="${letter}"]`);
-                if (key) {
-                    const currentStatus = key.classList.contains('correct') ? 'correct' :
-                                        key.classList.contains('present') ? 'present' :
-                                        key.classList.contains('absent') ? 'absent' : '';
+                if (!key) return;
 
-                    if (status === 'correct' || (status === 'present' && currentStatus !== 'correct') ||
-                        (status === 'absent' && currentStatus === '')) {
+                const currentStatus = key.classList.contains('correct') ? 'correct' :
+                                    key.classList.contains('present') ? 'present' :
+                                    key.classList.contains('absent') ? 'absent' : '';
+
+                // Priority: correct > present > absent
+                // Never downgrade a better status, but always apply if status is better or equal
+                if (status === 'correct') {
+                    // Always mark correct, highest priority
+                    key.classList.remove('absent', 'present', 'correct');
+                    key.classList.add('correct');
+                } else if (status === 'present') {
+                    // Mark present if not already correct
+                    if (currentStatus !== 'correct') {
                         key.classList.remove('absent', 'present', 'correct');
-                        key.classList.add(status);
+                        key.classList.add('present');
+                    }
+                } else if (status === 'absent') {
+                    // Mark absent if no better status exists
+                    if (currentStatus === '' || currentStatus === 'absent') {
+                        key.classList.remove('absent', 'present', 'correct');
+                        key.classList.add('absent');
                     }
                 }
             }
